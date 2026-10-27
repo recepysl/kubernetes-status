@@ -1,0 +1,47 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! Please never paste kubeconfig files, tokens or certificates.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Launch the app
+        2. Open the dropdown
+        3. …
+  - type: textarea
+    id: once
+    attributes:
+      label: Output of `--once`
+      description: Run `/Applications/KubernetesStatus.app/Contents/MacOS/KubernetesStatus --once` and paste the output with cluster or pod names redacted if needed.
+      render: console
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "macOS 15.1"
+    validations:
+      required: true
+  - type: input
+    id: cluster
+    attributes:
+      label: Cluster type and kubectl version
+      placeholder: "EKS 1.30, kubectl 1.31 (aws exec plugin)"
