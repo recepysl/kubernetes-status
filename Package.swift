@@ -10,5 +10,9 @@ let package = Package(
             name: "KubernetesStatus",
             dependencies: ["KubeStatusKit"]
         ),
+        .testTarget(
+            name: "KubeStatusKitTests",
+            dependencies: ["KubeStatusKit"]
+        ),
     ]
 )
