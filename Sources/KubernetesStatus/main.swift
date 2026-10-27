@@ -9,6 +9,8 @@ if CommandLine.arguments.contains("--selftest") {
     }
     FileHandle.standardError.write(("✗ selftest failed:\n" + failures.joined(separator: "\n") + "\n").data(using: .utf8)!)
     exit(1)
+} else if CommandLine.arguments.contains("--once") {
+    MainActor.assumeIsolated { OnceMode.run() }
 } else {
     KubernetesStatusApp.main()
 }
