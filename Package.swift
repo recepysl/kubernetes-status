@@ -6,5 +6,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "KubeStatusKit"),
+        .executableTarget(
+            name: "KubernetesStatus",
+            dependencies: ["KubeStatusKit"]
+        ),
     ]
 )
