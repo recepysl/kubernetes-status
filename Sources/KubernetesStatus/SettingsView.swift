@@ -7,7 +7,7 @@ enum SettingsWindow {
 
     static func show() {
         if window == nil {
-            let controller = NSHostingController(rootView: SettingsView(monitor: .shared, preferences: .shared, login: .shared))
+            let controller = NSHostingController(rootView: SettingsView(monitor: .shared, preferences: .shared, rancher: .shared, login: .shared))
             let newWindow = NSWindow(contentViewController: controller)
             newWindow.title = "Kubernetes Status Settings"
             newWindow.styleMask = [.titled, .closable]
@@ -23,6 +23,7 @@ enum SettingsWindow {
 struct SettingsView: View {
     @ObservedObject var monitor: StatusMonitor
     @ObservedObject var preferences: Preferences
+    @ObservedObject var rancher: RancherAccounts
     @ObservedObject var login: LoginItem
 
     var body: some View {
@@ -41,6 +42,36 @@ struct SettingsView: View {
                         .font(.system(size: 12, design: .monospaced))
                     Button("Reload") { monitor.refreshNow() }
                 }
+            }
+
+            section("Rancher") {
+                if !preferences.rancherServers.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(preferences.rancherServers, id: \.self) { server in
+                            rancherRow(server)
+                        }
+                    }
+                }
+                HStack {
+                    TextField("https://rancher.example.com", text: $rancher.newURL)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                    SecureField("token-xxxxx:…", text: $rancher.newToken)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                        .frame(width: 170)
+                    Button(rancher.isAdding ? "Checking…" : "Add") {
+                        Task { await rancher.add() }
+                    }
+                    .disabled(rancher.isAdding || rancher.newURL.isEmpty || rancher.newToken.isEmpty)
+                }
+                if let error = rancher.formError {
+                    Text(error).font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Every cluster the API token can see is added as a context. Pods and cluster capacity come from Rancher, so only namespaces you have access to are listed — no cluster-wide permission needed. The token is kept in your Keychain.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             section("Contexts") {
@@ -90,6 +121,25 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 520)
+    }
+
+    private func rancherRow(_ server: String) -> some View {
+        let state = rancher.states[server]
+        return HStack(spacing: 8) {
+            Image(systemName: "server.rack").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(URL(string: server)?.host ?? server)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                if let error = state?.error {
+                    Text(error).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                } else if let clusters = state?.clusters {
+                    Text("\(clusters.count) cluster\(clusters.count == 1 ? "" : "s"): \(clusters.joined(separator: ", "))")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                }
+            }
+            Spacer()
+            Button("Remove") { rancher.remove(server) }
+        }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

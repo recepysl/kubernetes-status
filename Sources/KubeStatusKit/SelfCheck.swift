@@ -67,6 +67,69 @@ public enum SelfCheck {
             failures.append("kubeconfig resolution setup threw: \(error)")
         }
 
+        failures += rancherChecks()
+        return failures
+    }
+
+    static func rancherChecks() -> [String] {
+        var failures: [String] = []
+        func expect(_ condition: Bool, _ message: @autoclosure () -> String) {
+            if !condition { failures.append(message()) }
+        }
+
+        expect(abs((Quantity.parse("15820m") ?? 0) - 15.82) < 1e-9, "millicores parse")
+        expect(Quantity.parse("72") == 72, "plain number parse")
+        expect(Quantity.parse("2Ki") == 2048, "binary suffix parse")
+        expect(Quantity.parse("3Mi") == 3 * 1024 * 1024, "Mi suffix parse")
+        expect(Quantity.parse("1G") == 1e9, "decimal suffix parse")
+        expect(Quantity.parse("") == nil && Quantity.parse(nil) == nil, "empty quantity is nil")
+
+        let endpoint = RancherEndpoint.detect(server: "https://rancher.example.com/k8s/clusters/c-m-abc12", token: "token-x:y")
+        expect(endpoint?.baseURL.absoluteString == "https://rancher.example.com", "rancher base URL, got \(String(describing: endpoint?.baseURL))")
+        expect(endpoint?.clusterID == "c-m-abc12", "rancher cluster id")
+        let prefixed = RancherEndpoint.detect(server: "https://example.com:8443/rancher/k8s/clusters/local", token: "t")
+        expect(prefixed?.baseURL.absoluteString == "https://example.com:8443/rancher" && prefixed?.clusterID == "local",
+               "rancher behind a path prefix, got \(String(describing: prefixed))")
+        expect(RancherEndpoint.detect(server: "https://10.0.0.1:6443", token: "t") == nil, "plain API server is not Rancher")
+        expect(RancherEndpoint.detect(server: "https://rancher.example.com/k8s/clusters/local", token: nil) == nil, "no token, no Rancher")
+        expect(RancherEndpoint.normalize("rancher.example.com/v3/")?.absoluteString == "https://rancher.example.com", "URL normalization")
+        expect(RancherEndpoint.normalize("not a url") == nil, "invalid URL rejected")
+
+        let cluster = RancherCluster(
+            id: "c-1", name: "prod", state: "active", provider: "aks", version: "v1.33.8", nodeCount: 7,
+            allocatable: ["cpu": "28", "memory": "100Gi", "pods": "660"],
+            requested: ["cpu": "7", "memory": "25Gi", "pods": "66"]
+        )
+        let info = cluster.info
+        expect(info.cpu?.fraction == 0.25, "cpu fraction, got \(String(describing: info.cpu?.fraction))")
+        expect(info.memory?.fraction == 0.25, "memory fraction")
+        expect(info.pods?.fraction == 0.1, "pod fraction")
+        expect(info.headline == "AKS · v1.33.8 · 7 nodes", "headline, got \(info.headline)")
+        expect(RancherCluster(id: "c-2", name: "x", state: "unavailable").info.headline == "unavailable", "inactive state surfaces")
+        let unreported = RancherCluster(id: "c-3", name: "y", allocatable: ["cpu": "28", "pods": "660"], requested: ["cpu": "0", "pods": "0"]).info
+        expect(unreported.cpu == nil && unreported.pods == nil, "clusters that don't report requests show no meters")
+
+        let config = RancherKubeconfig.render(
+            baseURL: URL(string: "https://rancher.example.com")!,
+            token: "token-a:b\"c",
+            entries: [.init(context: "prod", clusterID: "c-1")]
+        )
+        expect(config.contains("server: \"https://rancher.example.com/k8s/clusters/c-1\""), "kubeconfig server line")
+        expect(config.contains("token: \"token-a:b\\\"c\""), "kubeconfig token is quoted")
+
+        let view = Data("""
+        { "clusters": [
+            { "name": "r", "cluster": { "server": "https://rancher.example.com/k8s/clusters/c-1" } },
+            { "name": "plain", "cluster": { "server": "https://10.0.0.1:6443" } } ],
+          "users": [ { "name": "ru", "user": { "token": "tok" } }, { "name": "pu", "user": { "token": "tok" } } ],
+          "contexts": [
+            { "name": "rancher-prod", "context": { "cluster": "r", "user": "ru" } },
+            { "name": "direct", "context": { "cluster": "plain", "user": "pu" } } ] }
+        """.utf8)
+        let endpoints = KubeconfigView.rancherEndpoints(from: view)
+        expect(Set(endpoints.keys) == ["rancher-prod"], "only Rancher contexts detected, got \(endpoints.keys.sorted())")
+        expect(endpoints["rancher-prod"]?.token == "tok", "token taken from the context's user")
+
         return failures
     }
 

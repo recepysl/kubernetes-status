@@ -19,6 +19,7 @@ final class StatusMonitor: ObservableObject {
     private var generation = 0
     private var userExpansion: [String: Bool] = [:]
     private var subscriptions: Set<AnyCancellable> = []
+    private var discoveredRancher: [String: RancherEndpoint] = [:]
 
     private init() {
         preferences = .shared
@@ -84,7 +85,8 @@ final class StatusMonitor: ObservableObject {
 
     func kubectl() -> Kubectl? {
         guard let executable = Kubectl.locate(override: preferences.kubectlPath) else { return nil }
-        return Kubectl(executable: executable, kubeconfigs: Kubectl.resolveKubeconfigs(preferences.kubeconfigEntries))
+        let entries = preferences.kubeconfigEntries + RancherAccounts.shared.kubeconfigEntries
+        return Kubectl(executable: executable, kubeconfigs: Kubectl.resolveKubeconfigs(entries))
     }
 
     private func schedule() {
@@ -99,6 +101,9 @@ final class StatusMonitor: ObservableObject {
         let gen = generation
         isRefreshing = true
         defer { if gen == generation { isRefreshing = false } }
+
+        await RancherAccounts.shared.sync()
+        guard gen == generation else { return }
 
         guard let kubectl = kubectl() else {
             setupError = KubectlError.notFound.localizedDescription
@@ -119,10 +124,11 @@ final class StatusMonitor: ObservableObject {
             setupError = found.contexts.isEmpty ? "No contexts found in the configured kubeconfig files." : nil
             contexts = found.contexts
             currentContext = found.current
+            discoveredRancher = found.rancher
         }
 
         let targets = contexts.filter(preferences.isWatched).map { ($0, preferences.namespaces(for: $0)) }
-        let results = await Self.fetch(kubectl, targets: targets)
+        let results = await Self.fetch(kubectl, rancher: discoveredRancher, targets: targets)
         guard gen == generation else { return }
 
         for status in results {
@@ -145,6 +151,7 @@ final class StatusMonitor: ObservableObject {
     private struct Discovery: Sendable {
         let contexts: [String]
         let current: String?
+        let rancher: [String: RancherEndpoint]
     }
 
     nonisolated private static func discover(_ kubectl: Kubectl) async -> Result<Discovery, Error> {
@@ -152,7 +159,12 @@ final class StatusMonitor: ObservableObject {
             DispatchQueue.global(qos: .utility).async {
                 do {
                     let contexts = try kubectl.contexts()
-                    continuation.resume(returning: .success(Discovery(contexts: contexts, current: kubectl.currentContext())))
+                    let discovery = Discovery(
+                        contexts: contexts,
+                        current: kubectl.currentContext(),
+                        rancher: kubectl.rancherEndpoints()
+                    )
+                    continuation.resume(returning: .success(discovery))
                 } catch {
                     continuation.resume(returning: .failure(error))
                 }
@@ -160,9 +172,19 @@ final class StatusMonitor: ObservableObject {
         }
     }
 
-    nonisolated private static func fetch(_ kubectl: Kubectl, targets: [(String, [String])]) async -> [ContextStatus] {
+    nonisolated private static func fetch(
+        _ kubectl: Kubectl,
+        rancher: [String: RancherEndpoint],
+        targets: [(String, [String])]
+    ) async -> [ContextStatus] {
         await withTaskGroup(of: ContextStatus.self) { group in
             for (context, namespaces) in targets {
+                if let endpoint = rancher[context] {
+                    group.addTask {
+                        await RancherClient(endpoint: endpoint).status(context: context, clusterID: endpoint.clusterID, namespaces: namespaces)
+                    }
+                    continue
+                }
                 group.addTask {
                     await withCheckedContinuation { continuation in
                         DispatchQueue.global(qos: .utility).async {

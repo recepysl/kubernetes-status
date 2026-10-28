@@ -94,6 +94,11 @@ public struct Kubectl: Sendable {
         return name.isEmpty ? nil : name
     }
 
+    public func rancherEndpoints() -> [String: RancherEndpoint] {
+        guard let output = try? run(["config", "view", "--raw", "--output", "json"]) else { return [:] }
+        return KubeconfigView.rancherEndpoints(from: output)
+    }
+
     public func status(context: String, namespaces: [String], now: Date = Date()) -> ContextStatus {
         do {
             let pods = try self.pods(context: context, namespaces: namespaces, now: now)

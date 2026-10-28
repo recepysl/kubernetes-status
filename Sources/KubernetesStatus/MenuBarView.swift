@@ -187,15 +187,24 @@ struct ContextRow: View {
         }
     }
 
-    @ViewBuilder
     private var details: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let info = status.info {
+                ClusterInfoView(info: info)
+            }
+            podDetails
+        }
+    }
+
+    @ViewBuilder
+    private var podDetails: some View {
         if let error = status.error {
             Text(error)
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
         } else if status.unhealthy.isEmpty {
-            Label("All \(status.pods.count) pods healthy", systemImage: "checkmark.circle")
+            Label(healthySummary, systemImage: "checkmark.circle")
                 .font(.caption).foregroundStyle(.secondary)
         } else {
             VStack(alignment: .leading, spacing: 6) {
@@ -208,6 +217,67 @@ struct ContextRow: View {
                 }
             }
         }
+    }
+
+    private var healthySummary: String {
+        let namespaces = Set(status.pods.map(\.namespace)).count
+        let pods = "All \(status.pods.count) pod\(status.pods.count == 1 ? "" : "s") healthy"
+        return namespaces > 1 ? "\(pods) across \(namespaces) namespaces" : pods
+    }
+}
+
+struct ClusterInfoView: View {
+    let info: ClusterInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !info.headline.isEmpty {
+                Label(info.headline, systemImage: "server.rack")
+                    .font(.caption)
+                    .foregroundStyle(info.isActive ? Color.secondary : Color.orange)
+                    .lineLimit(1)
+            }
+            if info.cpu != nil || info.memory != nil || info.pods != nil {
+                HStack(spacing: 12) {
+                    meter("CPU", info.cpu)
+                    meter("Memory", info.memory)
+                    meter("Pods", info.pods)
+                }
+                .help("Requested by pods, as a share of what the nodes can allocate")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func meter(_ title: String, _ allocation: ClusterInfo.Allocation?) -> some View {
+        if let fraction = allocation?.fraction {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 2) {
+                    Text(title)
+                    Spacer(minLength: 2)
+                    Text("\(Int((fraction * 100).rounded()))%").monospacedDigit()
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                Capsule()
+                    .fill(Color.secondary.opacity(0.18))
+                    .frame(height: 4)
+                    .overlay(alignment: .leading) {
+                        GeometryReader { proxy in
+                            Capsule()
+                                .fill(color(for: fraction))
+                                .frame(width: max(proxy.size.width * fraction, fraction > 0 ? 4 : 0))
+                        }
+                    }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func color(for fraction: Double) -> Color {
+        if fraction >= 0.9 { return .red }
+        if fraction >= 0.75 { return .orange }
+        return .accentColor
     }
 }
 

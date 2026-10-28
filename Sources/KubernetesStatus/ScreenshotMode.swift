@@ -128,7 +128,16 @@ enum DemoData {
                 pod("checkout-api-7d9f8b6c5-x2kqp", "shop", "CrashLoopBackOff", .critical, ready: 0, restarts: 14, age: 2 * 3_600),
                 pod("search-indexer-5c6d7f-9hj2k", "search", "Pending", .warning, ready: 0, age: 25 * 60),
             ],
-            fetchedAt: now
+            fetchedAt: now,
+            info: ClusterInfo(
+                provider: "eks",
+                version: "v1.33.4",
+                state: "active",
+                nodeCount: 9,
+                cpu: .init(requested: 41.6, allocatable: 70),
+                memory: .init(requested: 182, allocatable: 236),
+                pods: .init(requested: 63, allocatable: 990)
+            )
         )
         return StatusMonitor(
             preview: [
@@ -195,7 +204,14 @@ enum DemoData {
         preferences.kubeconfigText = "~/.kube/config\n~/clusters/"
         preferences.namespaceFilters = ["prod-eu-west": "shop, search"]
         preferences.disabledContexts = ["docker-desktop"]
+        preferences.rancherServers = ["https://rancher.example.com"]
         return preferences
+    }
+
+    static func rancher(_ preferences: Preferences) -> RancherAccounts {
+        let accounts = RancherAccounts(preferences: preferences, persistent: false)
+        accounts.preview("https://rancher.example.com", clusters: ["prod-eu-west", "prod-us-east", "staging"])
+        return accounts
     }
 }
 
@@ -340,9 +356,10 @@ struct SettingsScene: View {
 
     var body: some View {
         let monitor = DemoData.incident()
+        let preferences = DemoData.preferences()
         ZStack {
             theme.backdrop
-            SettingsView(monitor: monitor, preferences: DemoData.preferences(), login: .shared)
+            SettingsView(monitor: monitor, preferences: preferences, rancher: DemoData.rancher(preferences), login: .shared)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(

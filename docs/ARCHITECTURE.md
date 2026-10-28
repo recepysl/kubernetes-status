@@ -41,6 +41,17 @@ When a cluster-wide listing fails with *Forbidden* and no namespaces are configu
 
 Errors are reduced to one readable line: the last non-empty line of standard error that isn't client-go `memcache.go` noise, without the `error:` prefix, capped at 240 characters.
 
+## Rancher
+
+Rancher-managed clusters often grant access per project rather than cluster-wide, so `kubectl get pods --all-namespaces` is *Forbidden* even though the user can see most namespaces. The app handles them natively:
+
+- **Detection.** `Kubectl.rancherEndpoints()` reads the merged config (`kubectl config view --raw --output json`). A context whose server ends in `/k8s/clusters/<id>` and whose user has a bearer token is treated as Rancher.
+- **Pods.** `RancherClient.pods(clusterID:)` calls Rancher's Steve API, `GET <rancher>/k8s/clusters/<id>/v1/pods`. Steve filters by the token's permissions, so the result is exactly the pods the user can see. Its items are standard pod objects, classified by the same `PodClassifier`. Pagination links are followed.
+- **Cluster details.** `GET <rancher>/v3/clusters/<id>` provides provider, Kubernetes version, node count, state and `requested` / `allocatable` CPU, memory and pods. Quantities such as `15820m` or `127520412Ki` are parsed by `Quantity`. Clusters that don't report requests show no meters rather than a misleading 0%.
+- **Rancher accounts.** In Settings the user adds a Rancher URL and API token. The token is verified against `/v3/clusters` and stored in the Keychain. On every refresh the app lists the clusters and writes `~/Library/Application Support/<bundle id>/rancher/<host>.yaml` (mode `0600`, folder `0700`), one context per cluster, which is appended to `KUBECONFIG`. Detection then picks those contexts up like any other, and *Logs* / *Describe* work in Terminal through the same file.
+
+Namespace filters still apply to Rancher contexts and are matched against the returned pods.
+
 ## Classification
 
 `PodClassifier` turns each item of `kubectl get pods -o json` into a `PodStatus` with a `Severity`:
@@ -64,6 +75,7 @@ A context's severity is its worst pod's, or *warning* if it couldn't be reached.
 flowchart TB
     subgraph Kit["KubeStatusKit (library)"]
         K["Kubectl.swift<br/>locate · kubeconfigs · run · fallback"]
+        R["Rancher.swift<br/>Steve pods · /v3 clusters · kubeconfig"]
         P["PodStatus.swift<br/>decoding + PodClassifier"]
         C["ContextStatus.swift<br/>ContextStatus · ClusterSummary · PodTransitions"]
         S["SelfCheck.swift"]
@@ -71,17 +83,21 @@ flowchart TB
     subgraph App["KubernetesStatus (executable)"]
         M["StatusMonitor.swift<br/>timer · discovery · parallel fetch"]
         PR["Preferences.swift"]
+        RA["RancherAccounts.swift<br/>Keychain · generated kubeconfig"]
         V["MenuBarView.swift · SettingsView.swift"]
         N["Notifier.swift"]
         T["TerminalActions.swift"]
         CLI["OnceMode · ScreenshotMode"]
     end
     M --> K --> P
+    M --> R --> P
+    K --> R
     M --> C
     M --> N
     V --> M
     V --> T
     M --> PR
+    M --> RA
 ```
 
 ### `StatusMonitor`

@@ -45,6 +45,7 @@ A pod has been crash-looping in staging for an hour, and you find out when someo
 | 🔔 **Notifications** | A native notification the moment a pod starts failing — not on every poll, and not for problems that were already there when you launched the app. |
 | 🔐 **Every auth method, for free** | Uses your own `kubectl`, so tokens, client certificates and exec plugins (EKS, GKE, AKS `kubelogin`, Rancher, OIDC) all just work. |
 | 🧭 **Namespace-scoped access** | No cluster-wide permission? Limit a context to the namespaces you can see. Forbidden cluster-wide listings automatically fall back to the context's namespace. |
+| 🐄 **Rancher, natively** | Add a Rancher URL and API token and every cluster it can see shows up — pods come through Rancher's API, so project-level access is enough. Each cluster also shows its version, node count and CPU / memory / pod requests against capacity. |
 | 🗂 **Folders of kubeconfigs** | Point it at `~/.kube/config`, a list of files, or a whole folder of `*.yaml` — they're merged just like `KUBECONFIG` does. |
 | 🪶 **Tiny & native** | ~1.8k lines of Swift, zero dependencies, no Dock icon, no Electron, no in-cluster agent. |
 
@@ -77,15 +78,24 @@ Choose which contexts to watch and how:
 
 **Requirements:** macOS 14 Sonoma or later and [`kubectl`](https://kubernetes.io/docs/tasks/tools/install-kubectl-macos/) (`brew install kubectl`).
 
+**One-line install (recommended)** — downloads the latest release into `/Applications` and launches it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/recepysl/kubernetes-status/main/scripts/install.sh | bash
+```
+
+**Or install manually:**
+
 1. Download the latest **`KubernetesStatus-x.y.z.dmg`** from [Releases](https://github.com/recepysl/kubernetes-status/releases/latest).
 2. Open it and drag **Kubernetes Status** onto **Applications**.
 3. Launch it — the wheel appears in your menu bar and starts checking `~/.kube/config`.
 
 > [!IMPORTANT]
-> Builds are **ad-hoc signed and not notarized**, so Gatekeeper blocks the first launch. Right-click the app → **Open**, or run:
+> Builds are **ad-hoc signed and not notarized**, so a copy downloaded with a browser is blocked on first launch with *“Apple could not verify ‘KubernetesStatus.app’…”*. Click **Done**, then open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. Or clear the flag in Terminal:
 > ```bash
 > xattr -dr com.apple.quarantine /Applications/KubernetesStatus.app
 > ```
+> The one-line installer above doesn't hit this, because `curl` doesn't mark downloads as quarantined.
 
 To remove it later: `make uninstall` (or run [`scripts/uninstall.sh`](scripts/uninstall.sh)).
 
@@ -109,6 +119,7 @@ flowchart LR
 | List pods | `kubectl --context <name> get pods --all-namespaces -o json` (or per namespace), 20 s timeout per call |
 | Classify | Phase, container states, readiness, restarts and age decide each pod's severity |
 | Fall back | A *Forbidden* cluster-wide listing retries in the context's own namespace |
+| Rancher | Contexts served by Rancher (`…/k8s/clusters/<id>`) are listed through Rancher's API with the context's token, returning every namespace you can access, plus cluster capacity from `/v3/clusters` |
 
 The app only ever **reads**. It runs `get`, `logs` and `describe` — nothing that changes your clusters. More detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -153,11 +164,11 @@ $ KubernetesStatus --once
 
 ```
 Sources/
-  KubeStatusKit/       kubectl runner, kubeconfig resolution, pod classification — no UI, fully testable
+  KubeStatusKit/       kubectl runner, Rancher client, kubeconfig resolution, pod classification — no UI, fully testable
   KubernetesStatus/    SwiftUI menu bar app, settings, notifications, CLI modes, screenshot renderer
 Tests/                 XCTest target (delegates to KubeStatusKit.SelfCheck)
 Resources/             Info.plist (LSUIElement bundle metadata)
-scripts/               build · make-dmg · test · uninstall
+scripts/               build · make-dmg · install · test · uninstall
 tools/                 App icon generator
 docs/                  Architecture notes and README images
 ```
@@ -168,6 +179,7 @@ docs/                  Architecture notes and README images
 - [ ] Per-context colors and custom display names
 - [ ] Notarized builds and a Homebrew cask
 - [ ] Optional native API client (no `kubectl` needed) for token and certificate auth
+- [x] Rancher servers with per-cluster capacity
 
 Ideas and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 

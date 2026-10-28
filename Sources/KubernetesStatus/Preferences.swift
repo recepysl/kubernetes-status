@@ -24,6 +24,9 @@ final class Preferences: ObservableObject {
     @Published var notificationsEnabled: Bool {
         didSet { defaults.set(notificationsEnabled, forKey: Keys.notifications) }
     }
+    @Published var rancherServers: [String] {
+        didSet { defaults.set(rancherServers, forKey: Keys.rancherServers) }
+    }
 
     private let defaults: UserDefaults
 
@@ -34,6 +37,7 @@ final class Preferences: ObservableObject {
         static let namespaceFilters = "namespaceFilters"
         static let interval = "refreshInterval"
         static let notifications = "notificationsEnabled"
+        static let rancherServers = "rancherServers"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -47,6 +51,7 @@ final class Preferences: ObservableObject {
         let savedInterval = defaults.double(forKey: Keys.interval)
         interval = Self.intervals.contains(savedInterval) ? savedInterval : 60
         notificationsEnabled = defaults.object(forKey: Keys.notifications) as? Bool ?? true
+        rancherServers = defaults.stringArray(forKey: Keys.rancherServers) ?? []
     }
 
     var kubeconfigEntries: [String] {
